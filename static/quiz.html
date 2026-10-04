@@ -1,0 +1,32 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Quiz</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css"><script src="/static/theme.js"></script></head>
+<body><main class="wrap" id="app" style="padding-top:9vh"><div class="skel"></div></main>
+<script>
+var slug=location.pathname.split('/')[2],Q,i=-1,A={},name='',rid,app=document.getElementById('app');
+function show(h){app.innerHTML='<div class="fade">'+h+'</div>'}
+function fail(m){show('<h1>Quiz unavailable</h1><p class="mu">'+esc(m)+'</p>')}
+api('/api/quiz/'+slug).then(function(d){Q=d;document.title=d.title;intro()}).catch(function(e){fail(e.message)});
+function intro(){i=-1;show('<h1>'+esc(Q.title)+'</h1>'+(Q.description?'<p class="mu">'+esc(Q.description)+'</p>':'')+'<div class="card stack">'+
+(Q.ask_name?'<div><label for="nm">Your name</label><input id="nm" maxlength="80" autocomplete="name" value="'+esc(name)+'"></div>':'')+
+'<p class="mu sm" style="margin:0">'+Q.questions.length+' questions. Every question is required.</p><button class="btn p" id="go">Start quiz</button><p class="err" id="e"></p></div>');
+document.getElementById('go').onclick=function(){if(Q.ask_name){name=document.getElementById('nm').value.trim();if(!name)return document.getElementById('e').textContent='Enter your name to start.'}i=0;ask()}}
+function ask(){var q=Q.questions[i],n=Q.questions.length,last=i==n-1;
+var body=q.type=='mc'?q.options.map(function(o){return'<label class="opt"><input type="radio" name="a" value="'+esc(o)+'"'+(A[q.id]===o?' checked':'')+'><span>'+esc(o)+'</span></label>'}).join(''):
+'<textarea id="t" maxlength="1000" placeholder="Type your answer">'+esc(A[q.id]||'')+'</textarea>';
+show('<div class="bar"><i style="width:'+(i/n*100)+'%"></i></div><p class="mu sm" style="margin:10px 0">Question '+(i+1)+' of '+n+'</p><div class="card"><h2>'+esc(q.text)+'</h2>'+body+
+'<p class="err" id="e" role="alert"></p><div class="row sp"><button class="btn" id="bk"'+(i?'':' style="visibility:hidden"')+'>Back</button><button class="btn p" id="nx">'+(last?'Submit answers':'Next')+'</button></div></div>');
+function val(){if(q.type=='mc'){var c=document.querySelector('input[name=a]:checked');return c?c.value:''}return document.getElementById('t').value.trim()}
+document.getElementById('bk').onclick=function(){A[q.id]=val();i--;ask()};
+document.getElementById('nx').onclick=async function(){var v=val();if(!v)return document.getElementById('e').textContent='Answer this question to continue.';A[q.id]=v;
+if(!last){i++;return ask()}var b=this;b.disabled=true;b.textContent='Submitting...';
+try{var r=await api('/api/quiz/'+slug+'/submit',{method:'POST',body:{name:name,answers:A}});rid=r.response_id;done(r.results);ask_msg()}
+catch(e){b.disabled=false;b.textContent='Submit answers';document.getElementById('e').textContent=e.message}}}
+function done(res){show('<h1>All done</h1><p class="mu">Your answers were submitted. Thanks for taking part.</p>'+(res?'<div class="card stack">'+res.map(function(r){return'<div><b>'+esc(r.question)+'</b><br>Your answer: '+esc(r.yours)+(r.correct?'<br><span style="color:var(--'+(r.is_correct?'ok':'er')+')">'+(r.is_correct?'Correct':'Correct answer: '+esc(r.correct))+'</span>':'')+'</div>'}).join('')+'</div>':''))}
+function ask_msg(){var m=document.createElement('div');m.className='modal';m.setAttribute('role','dialog');m.setAttribute('aria-modal','true');m.setAttribute('aria-labelledby','mt');
+m.innerHTML='<div class="card stack"><h2 id="mt">Have a message for Nayan?</h2><p class="mu" style="margin:0">Say anything you like. It goes straight to Nayan.</p><textarea id="mb" maxlength="1000" placeholder="Write your message"></textarea><p class="err" id="me" role="alert"></p><div class="row sp"><button class="btn" id="sk">No message, continue</button><button class="btn p" id="sd">Send Message</button></div></div>';
+document.body.appendChild(m);document.getElementById('mb').focus();document.getElementById('sk').onclick=function(){m.remove()};
+document.getElementById('sd').onclick=async function(){var b=this,t=document.getElementById('mb').value.trim();if(!t)return document.getElementById('me').textContent='Write a message first, or choose to continue without one.';
+b.disabled=true;b.textContent='Sending...';try{await api('/api/message',{method:'POST',body:{response_id:rid,body:t}});m.querySelector('.card').innerHTML='<h2>Message sent</h2><p class="mu">Thanks. Nayan will see it.</p><button class="btn p" id="ok">Continue</button>';document.getElementById('ok').onclick=function(){m.remove()}}
+catch(e){b.disabled=false;b.textContent='Send Message';document.getElementById('me').textContent=e.message}}}
+</script></body></html>

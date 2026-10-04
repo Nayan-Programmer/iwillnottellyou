@@ -1,0 +1,71 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nayan Quiz admin</title><meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css"><script src="/static/theme.js"></script></head>
+<body><main class="wrap wide" id="app"><div class="skel"></div></main>
+<script>
+var app=document.getElementById('app'),tab='quizzes',QZ=[],MS=[],E=null,SEL=null,RD=null,VIEW='people',TERM='';
+function toast(t){var d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(function(){d.remove()},2200)}
+function fmt(s){return new Date(s).toLocaleString([], {dateStyle:'medium',timeStyle:'short'})}
+function link(q){return location.origin+'/q/'+q.slug}
+async function boot(){try{var m=await api('/api/admin/me');m.admin?load():login()}catch(e){app.innerHTML='<div class="empty">'+esc(e.message)+'</div>'}}
+function login(){app.innerHTML='<div class="card stack fade" style="max-width:380px;margin:12vh auto 0"><h1 style="font-size:1.8rem">Admin sign in</h1><div><label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password"></div><p class="err" id="e" role="alert"></p><button class="btn p" id="go">Sign in</button></div>';
+var go=async function(){try{await api('/api/admin/login',{method:'POST',body:{password:document.getElementById('pw').value}});load()}catch(e){document.getElementById('e').textContent=e.message}};
+document.getElementById('go').onclick=go;document.getElementById('pw').onkeydown=function(e){if(e.key=='Enter')go()};document.getElementById('pw').focus()}
+async function guard(f){try{return await f()}catch(e){if(e.status==401)return login();toast(e.message)}}
+async function load(){app.innerHTML='<div class="skel"></div>';await guard(async function(){QZ=await api('/api/admin/quizzes');MS=await api('/api/admin/messages');if(!SEL&&QZ[0])SEL=QZ[0].id;draw()})}
+function draw(){var un=MS.filter(function(m){return!m.is_read}).length;
+app.innerHTML='<div class="row sp" style="margin-top:36px"><h1 style="margin:0;font-size:2rem">Nayan Quiz</h1><button class="btn" onclick="out()">Sign out</button></div><div class="tabs" role="tablist">'+
+[['quizzes','Quizzes'],['responses','Responses'],['messages','Messages'+(un?' <span class="pill new">'+un+'</span>':'')]].map(function(t){return'<button class="tab'+(tab==t[0]?' on':'')+'" onclick="go(\''+t[0]+'\')">'+t[1]+'</button>'}).join('')+'</div><div id="v" class="fade"></div>';
+({quizzes:vQuizzes,responses:vResp,messages:vMsgs})[tab]()}
+function go(t){tab=t;E=null;RD=null;draw()}
+async function out(){await api('/api/admin/logout',{method:'POST'});login()}
+function V(h){document.getElementById('v').innerHTML=h}
+
+/* quizzes */
+function vQuizzes(){if(E)return editor();
+V('<div class="row sp" style="margin-bottom:14px"><p class="mu" style="margin:0">'+QZ.length+' quiz'+(QZ.length==1?'':'zes')+'</p><button class="btn p" onclick="newQ()">New quiz</button></div>'+
+(QZ.length?'<div class="stack">'+QZ.map(function(q){return'<div class="card"><div class="row sp"><div><h3 style="margin:0">'+esc(q.title)+'</h3><span class="pill'+(q.active?'':' off')+'">'+(q.active?'Live':'Inactive')+'</span> <span class="mu sm">'+q.questions.length+' questions, '+q.responses+' responses</span></div><div class="row">'+
+'<button class="btn s" onclick="tog('+q.id+',\'active\','+!q.active+')">'+(q.active?'Deactivate':'Activate')+'</button><button class="btn s" onclick="edit('+q.id+')">Edit</button><button class="btn s d" onclick="delQ('+q.id+')">Delete</button></div></div>'+
+'<div class="row" style="margin-top:12px"><input readonly value="'+esc(link(q))+'" aria-label="Quiz link" class="grow" onfocus="this.select()"><button class="btn s" onclick="cp(\''+q.slug+'\')">Copy link</button></div>'+(q.active?'':'<p class="mu sm" style="margin:8px 0 0">Activate this quiz so people can open the link.</p>')+'</div>'}).join('')+'</div>':'<div class="empty">No quizzes yet. Create one to get a shareable link.</div>'))}
+function cp(s){var t=location.origin+'/q/'+s;(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){toast('Link copied')},function(){toast('Select the link and copy it manually')})}
+async function tog(id,k,v){await guard(async function(){var b={};b[k]=v;await api('/api/admin/quizzes/'+id,{method:'PATCH',body:b});await load();toast(v?'Quiz is live':'Quiz deactivated')})}
+async function delQ(id){if(!confirm('Delete this quiz with all its responses and messages? This cannot be undone.'))return;await guard(async function(){await api('/api/admin/quizzes/'+id,{method:'DELETE'});if(SEL==id)SEL=null;await load();toast('Quiz deleted')})}
+function blank(){return{text:'',type:'mc',options:['',''],correct:''}}
+function newQ(){E={title:'',description:'',active:true,show_answers:false,ask_name:true,questions:[blank(),blank()]};vQuizzes()}
+function edit(id){E=JSON.parse(JSON.stringify(QZ.find(function(q){return q.id==id})));vQuizzes()}
+function editor(){var q=E;V('<div class="card stack"><h2>'+(q.id?'Edit quiz':'New quiz')+'</h2><div><label>Title</label><input maxlength="120" value="'+esc(q.title)+'" oninput="E.title=this.value"></div><div><label>Description (optional)</label><input maxlength="500" value="'+esc(q.description)+'" oninput="E.description=this.value"></div>'+
+'<div class="row"><label class="row" style="margin:0"><input type="checkbox" style="width:auto"'+(q.ask_name?' checked':'')+' onchange="E.ask_name=this.checked"> Ask for participant name</label><label class="row" style="margin:0"><input type="checkbox" style="width:auto"'+(q.show_answers?' checked':'')+' onchange="E.show_answers=this.checked"> Show correct answers after submit</label><label class="row" style="margin:0"><input type="checkbox" style="width:auto"'+(q.active?' checked':'')+' onchange="E.active=this.checked"> Active</label></div></div>'+
+q.questions.map(function(x,n){return'<div class="card stack" style="margin-top:14px"><div class="row sp"><h3 style="margin:0">Question '+(n+1)+'</h3><div class="row"><button class="btn s" onclick="mv('+n+',-1)"'+(n?'':' disabled')+' aria-label="Move up">Up</button><button class="btn s" onclick="mv('+n+',1)"'+(n<q.questions.length-1?'':' disabled')+' aria-label="Move down">Down</button><button class="btn s d" onclick="rm('+n+')"'+(q.questions.length>2?'':' disabled')+'>Remove</button></div></div>'+
+'<input maxlength="300" placeholder="Question text" value="'+esc(x.text)+'" oninput="E.questions['+n+'].text=this.value"><select onchange="E.questions['+n+'].type=this.value;editor()"><option value="mc"'+(x.type=='mc'?' selected':'')+'>Multiple choice</option><option value="text"'+(x.type=='text'?' selected':'')+'>Text answer</option></select>'+
+(x.type=='mc'?x.options.map(function(o,k){return'<div class="row"><input class="grow" maxlength="200" placeholder="Option '+(k+1)+'" value="'+esc(o)+'" oninput="setOpt('+n+','+k+',this.value)"><label class="row" style="margin:0" title="Mark as correct"><input type="radio" style="width:auto" name="c'+n+'"'+(o&&x.correct==o?' checked':'')+' onchange="E.questions['+n+'].correct=E.questions['+n+'].options['+k+']"> Correct</label><button class="btn s d" onclick="rmOpt('+n+','+k+')"'+(x.options.length>2?'':' disabled')+'>x</button></div>'}).join('')+(x.options.length<6?'<button class="btn s" onclick="E.questions['+n+'].options.push(\'\');editor()">Add option</button>':''):
+'<input maxlength="200" placeholder="Correct answer (optional, only shown if you enable it)" value="'+esc(x.correct||'')+'" oninput="E.questions['+n+'].correct=this.value">')+'</div>'}).join('')+
+'<p class="err" id="e" role="alert"></p><div class="row" style="margin-top:14px">'+(q.questions.length<3?'<button class="btn" onclick="E.questions.push(blank());editor()">Add question</button>':'')+'<span class="grow"></span><button class="btn" onclick="E=null;vQuizzes()">Cancel</button><button class="btn p" id="sv" onclick="save()">Save quiz</button></div>')}
+function setOpt(n,k,v){var x=E.questions[n];if(x.correct==x.options[k])x.correct=v;x.options[k]=v}
+function rmOpt(n,k){var x=E.questions[n];if(x.correct==x.options[k])x.correct='';x.options.splice(k,1);editor()}
+function mv(n,d){var a=E.questions,t=a[n];a[n]=a[n+d];a[n+d]=t;editor()}
+function rm(n){E.questions.splice(n,1);editor()}
+async function save(){var b=document.getElementById('sv');b.disabled=true;b.textContent='Saving...';
+try{var r=await api('/api/admin/quizzes'+(E.id?'/'+E.id:''),{method:E.id?'PUT':'POST',body:E});SEL=r.id;E=null;await load();toast('Quiz saved')}
+catch(e){b.disabled=false;b.textContent='Save quiz';if(e.status==401)return login();document.getElementById('e').textContent=e.message}}
+
+/* responses */
+function loadResp(){RD=null;return vResp()}
+async function vResp(){var q=QZ.find(function(x){return x.id==SEL});if(!q)return V('<div class="empty">Create a quiz first to see responses here.</div>');
+if(!RD){V('<div class="skel"></div>');var ok=await guard(async function(){RD=await api('/api/admin/quizzes/'+SEL+'/responses?q='+encodeURIComponent(TERM));return 1});if(!ok)return}
+var s=RD.stats.map(function(x){var mx=Math.max.apply(null,[1].concat(Object.values(x.distribution||{})));return'<div class="card"><h3>'+esc(x.text)+'</h3>'+(x.distribution?Object.keys(x.distribution).map(function(o){var c=x.distribution[o];return'<div class="dist"><span>'+esc(o)+'</span><div class="bar"><i style="width:'+c/mx*100+'%"></i></div><b>'+c+'</b></div>'}).join(''):'<p class="mu sm" style="margin:0">'+x.answered+' text answers</p>')+'</div>'}).join('');
+var body=!RD.responses.length?'<div class="empty">'+(TERM?'No responses match your search.':'No responses yet. Share the quiz link to collect some.')+'</div>':
+VIEW=='people'?'<div class="card scroll"><table class="tbl"><thead><tr><th>Submitted</th><th>Name</th>'+RD.questions.map(function(x){return'<th>'+esc(x.text)+'</th>'}).join('')+'<th></th></tr></thead><tbody>'+RD.responses.map(function(r){return'<tr><td>'+fmt(r.created_at)+'</td><td>'+esc(r.name||'-')+'</td>'+r.answers.map(function(a){return'<td>'+esc(a)+'</td>'}).join('')+'<td><button class="btn s d" onclick="delR(\''+r.id+'\')">Delete</button></td></tr>'}).join('')+'</tbody></table></div>':
+'<div class="stack">'+RD.questions.map(function(x,i){return'<div class="card"><h3>'+esc(x.text)+'</h3>'+RD.responses.map(function(r){return'<div class="row sp" style="padding:6px 0;border-top:1px solid var(--bd)"><span>'+esc(r.answers[i])+'</span><span class="mu sm">'+esc(r.name||'Anonymous')+', '+fmt(r.created_at)+'</span></div>'}).join('')+'</div>'}).join('')+'</div>';
+V('<div class="row" style="margin-bottom:14px"><select id="qs" style="max-width:300px" onchange="SEL=+this.value;RD=null;TERM=\'\';loadResp()">'+QZ.map(function(x){return'<option value="'+x.id+'"'+(x.id==SEL?' selected':'')+'>'+esc(x.title)+'</option>'}).join('')+'</select><a class="btn" style="text-decoration:none" href="/api/admin/quizzes/'+SEL+'/export.csv">Export CSV</a><button class="btn" onclick="loadResp()">Refresh</button></div>'+
+'<div class="grid" style="margin-bottom:14px"><div class="card stat"><b>'+RD.total+'</b><span class="mu">participants</span></div><div class="card stat"><b>'+(RD.total?RD.responses.length+'/'+RD.total:'0')+'</b><span class="mu">shown</span></div><div class="card stat"><b>'+(q.active?'Live':'Off')+'</b><span class="mu">quiz status</span></div></div><div class="grid" style="margin-bottom:18px">'+s+'</div>'+
+'<div class="row" style="margin-bottom:12px"><input id="srch" class="grow" placeholder="Search names and answers" value="'+esc(TERM)+'" style="max-width:360px"><button class="btn'+(VIEW=='people'?' p':'')+'" onclick="VIEW=\'people\';vResp()">By participant</button><button class="btn'+(VIEW=='q'?' p':'')+'" onclick="VIEW=\'q\';vResp()">By question</button></div>'+body);
+var si=document.getElementById('srch'),t;si.oninput=function(){clearTimeout(t);t=setTimeout(function(){TERM=si.value.trim();loadResp().then(function(){var n=document.getElementById('srch');n.focus();n.setSelectionRange(n.value.length,n.value.length)})},300)}}
+async function delR(id){if(!confirm('Delete this response? This cannot be undone.'))return;await guard(async function(){await api('/api/admin/responses/'+id,{method:'DELETE'});await load2()})}
+async function load2(){QZ=await api('/api/admin/quizzes');RD=null;tab='responses';loadResp();toast('Response deleted')}
+
+/* messages */
+function vMsgs(){V(MS.length?'<div class="stack">'+MS.map(function(m){return'<div class="card msg'+(m.is_read?'':' unread')+'"><div class="row sp"><div><b>'+esc(m.name||'Anonymous')+'</b> '+(m.is_read?'':'<span class="pill new">New</span>')+'<div class="mu sm">'+esc(m.quiz)+', '+fmt(m.created_at)+'</div></div><div class="row"><button class="btn s" onclick="rd('+m.id+','+m.is_read+')">Mark as '+(m.is_read?'unread':'read')+'</button><button class="btn s d" onclick="dm('+m.id+')">Delete</button></div></div><p style="margin:12px 0 0;white-space:pre-wrap">'+esc(m.body)+'</p></div>'}).join('')+'</div>':'<div class="empty">No messages yet. They show up here after someone finishes a quiz.</div>')}
+async function rd(id,was){await guard(async function(){await api('/api/admin/messages/'+id,{method:'PATCH',body:{is_read:!was}});MS=await api('/api/admin/messages');draw()})}
+async function dm(id){if(!confirm('Delete this message?'))return;await guard(async function(){await api('/api/admin/messages/'+id,{method:'DELETE'});MS=await api('/api/admin/messages');draw();toast('Message deleted')})}
+boot();
+</script></body></html>
